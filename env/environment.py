@@ -261,6 +261,15 @@ _ACTION_STAGE_PUSH: Dict[str, StageType] = {
 # MAIN ENVIRONMENT
 # ─────────────────────────────────────────────────────────────────────────────
 
+def _safe_action(self, action):
+    """Convert dict action to Action-like object"""
+    if hasattr(action, 'action_type'):
+        return action  # already Action object
+    return type('Action', (), {
+        'action_type': action.get('action_type', 'UNKNOWN'),
+        'message': action.get('message', ''),
+        'discount_pct': action.get('discount_pct', 0.0)
+    })()
 
 class WhatsAppEnv:
     """
@@ -407,11 +416,9 @@ class WhatsAppEnv:
     # ─────────────────────────────────────────────────────────────────────────
     # A2 · INTERNAL PIPELINE
     # ─────────────────────────────────────────────────────────────────────────
-
-    def _apply_agent_action_to_state(self, action: Action) -> None:
-        """Apply immediate state effects of the agent's chosen action."""
-        s = self._state
-        self._chat_history.append(f"AGENT: {action.message or action.action_type}")
+def _apply_agent_action_to_state(self, action: Action) -> None:
+    action = self._safe_action(action)  # Robust fix!
+    self._chat_history.append(f"AGENT: {action.message or action.action_type}")
 
         updates: Dict[str, Any] = {}
 
