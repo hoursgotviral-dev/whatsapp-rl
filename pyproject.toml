@@ -1,0 +1,22 @@
+[project]
+name = "whatsapp-business-rl"
+version = "1.0.0"
+description = "WhatsApp Sales RL Environment"
+requires-python = ">=3.11"
+dependencies = [
+    "pydantic>=2.5.0",
+    "fastapi>=0.100.0",
+    "uvicorn[standard]>=0.25.0",
+    "numpy>=1.24.0",
+    "requests>=2.31.0",
+    "openai>=1.0.0",
+    "gradio>=4.0.0",
+    "python-multipart",
+    "openenv-core>=0.2.0",
+]
+
+[project.scripts]
+server = "server:main"
+
+[project.urls]
+Homepage = "https://huggingface.co/spaces/SIKRUTI/whatsapp-rl"
