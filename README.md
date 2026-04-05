@@ -1,3 +1,11 @@
+---
+title: Whatsapp RL
+emoji: 🤖
+colorFrom: green
+colorTo: blue
+sdk: docker
+pinned: false
+---
 # WhatsApp Business Conversation RL Environment
 
 An OpenEnv-compliant reinforcement learning environment that simulates real-world WhatsApp B2C sales conversations. An agent learns to optimise business outcomes — conversion rate, customer satisfaction, cost management — through sequential decision-making across multi-turn dialogues.
