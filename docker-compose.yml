@@ -1,0 +1,27 @@
+version: "3.9"
+
+services:
+  api:
+    build: .
+    container_name: whatsapp-rl-api
+    ports:
+      - "7860:7860"
+    environment:
+      - PYTHONPATH=/app
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7860/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  gradio:
+    build: .
+    container_name: whatsapp-rl-gradio
+    ports:
+      - "7861:7861"
+    environment:
+      - PYTHONPATH=/app
+    command: python app/gradio_demo.py
+    depends_on:
+      api:
+        condition: service_healthy

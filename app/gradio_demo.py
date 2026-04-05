@@ -74,15 +74,23 @@ def safe_chat(task_id: str, message: str, history: list, env_state):
             env.reset()
 
         action = _infer_action(message)
-        obs, reward, done, info = env.step(action)
+        from models import Action
+        if action["action_type"] == "OFFER_DISCOUNT":
+            action_obj = Action(action_type="OFFER_DISCOUNT", discount_pct=action.get("discount_pct", 10.0), message=action.get("message", ""))
+        else:
+            action_obj = Action(action_type=action["action_type"], message=action.get("message", ""))
+        obs, reward, done, info = env.step(action_obj)
 
         # build the agent's reply from chat history
         agent_reply = obs.chat_history[-1] if obs.chat_history else "..."
 
-        history = history + [(message, agent_reply)]
+        history = history + [
+    {"role": "user", "content": message},
+    {"role": "assistant", "content": agent_reply}
+]
 
         status_lines = [
-            f"Stage: {obs.stage}  |  Step: {obs.step_count}  |  Action: {action['action_type']}",
+            f"Stage: {obs.stage}  |  Step: {obs.step_count}  |  Action: {action_obj.action_type}",
             f"Reward: {reward:+.3f}  |  Sentiment: {obs.sentiment:+.2f}  |  Done: {done}",
         ]
         if done:
@@ -178,4 +186,4 @@ with gr.Blocks(title="WhatsApp RL Agent") as demo:
     # Clear: wipes chat UI only, does NOT touch env_state
     clear_btn.click(lambda: ([], ""), outputs=[chatbot, metrics])
 
-demo.launch(server_port=7860, share=False, show_error=True)
+demo.launch(server_name="0.0.0.0", server_port=7861, share=False, show_error=True)
