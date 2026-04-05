@@ -261,16 +261,6 @@ _ACTION_STAGE_PUSH: Dict[str, StageType] = {
 # MAIN ENVIRONMENT
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _safe_action(self, action):
-    """Convert dict action to Action-like object"""
-    if hasattr(action, 'action_type'):
-        return action  # already Action object
-    return type('Action', (), {
-        'action_type': action.get('action_type', 'UNKNOWN'),
-        'message': action.get('message', ''),
-        'discount_pct': action.get('discount_pct', 0.0)
-    })()
-
 class WhatsAppEnv:
     """
     WhatsApp sales-agent RL environment.
@@ -291,10 +281,7 @@ class WhatsAppEnv:
         self.task_id = task_id
         self.config: TaskConfig = config or TASK_CONFIGS.get(task_id, TaskConfig(task_id=task_id))
         self.max_steps: int = self.config.max_steps
-
-        # Dev C's simulator injected here; fall back to built-in stub
         self._simulator: UserSimulatorProtocol = simulator or _DefaultUserSimulator()
-
         self._state: Optional[State] = None
         self._chat_history: List[str] = []
         self._rng = random.Random()
@@ -316,15 +303,10 @@ class WhatsAppEnv:
     # ── A2 · reset ────────────────────────────────────────────────────────────
 
     def reset(self) -> Observation:
-        """
-        Start a new episode.
-        Samples initial state from TaskConfig ranges.
-        """
+        """Start a new episode. Samples initial state from TaskConfig ranges."""
         self._chat_history = []
-
         cfg = self.config
 
-        # sample user type from weighted distribution
         user_types = list(cfg.user_type_weights.keys())
         weights = list(cfg.user_type_weights.values())
         user_type = self._rng.choices(user_types, weights=weights, k=1)[0]
@@ -353,16 +335,7 @@ class WhatsAppEnv:
     # ── A2 · step ─────────────────────────────────────────────────────────────
 
     def step(self, action: Action) -> Tuple[Observation, float, bool, dict]:
-        """
-        Advance the environment by one step.
-
-        Returns
-        -------
-        observation : Observation
-        reward      : float
-        done        : bool
-        info        : dict  (strict schema – see below)
-        """
+        """Advance the environment by one step."""
         if self._state is None:
             raise RuntimeError("Call reset() first.")
         if self._state.episode_done:
@@ -370,7 +343,6 @@ class WhatsAppEnv:
 
         state_before = self._state.model_copy(deep=True)
 
-        # ── pipeline ────────────────────────────────────────────────────────
         self._apply_agent_action_to_state(action)
         self._advance_time()
 
@@ -393,7 +365,6 @@ class WhatsAppEnv:
             "time_step": s.time_step,
             "conversion_prob": s.conversion_prob,
             "violation_count": s.obligations.violation_count,
-
             "state_snapshot": {
                 "outcome": s.outcome,
                 "satisfaction": s.satisfaction,
@@ -406,7 +377,6 @@ class WhatsAppEnv:
                 "time_step": s.time_step,
                 "violation_count": s.obligations.violation_count,
             },
-
             "obligation_events": obligation_events,
             "reward_components": components,
         }
@@ -416,15 +386,26 @@ class WhatsAppEnv:
     # ─────────────────────────────────────────────────────────────────────────
     # A2 · INTERNAL PIPELINE
     # ─────────────────────────────────────────────────────────────────────────
-def _apply_agent_action_to_state(self, action: Action) -> None:
-    action = self._safe_action(action)  # Robust fix!
-    self._chat_history.append(f"AGENT: {action.message or action.action_type}")
 
+    def _safe_action(self, action):
+        """Convert dict action to Action-like object if needed."""
+        if hasattr(action, 'action_type'):
+            return action  # already an Action object
+        return type('Action', (), {
+            'action_type': action.get('action_type', 'UNKNOWN'),
+            'message': action.get('message', ''),
+            'discount_pct': action.get('discount_pct', 0.0)
+        })()
+
+    def _apply_agent_action_to_state(self, action: Action) -> None:
+        action = self._safe_action(action)
+        self._chat_history.append(f"AGENT: {action.message or action.action_type}")
+
+        s = self._state          # ← THIS LINE was the missing piece
         updates: Dict[str, Any] = {}
 
         if action.action_type == "OFFER_DISCOUNT":
             pct = action.discount_pct or 0.0
-            # larger discount → bigger conv boost, bigger cost
             updates["conversion_prob"] = s.conversion_prob + 0.10 + pct * 0.002
             updates["cost_to_business"] = s.cost_to_business + pct
             updates["satisfaction"] = s.satisfaction + 0.05
@@ -435,7 +416,6 @@ def _apply_agent_action_to_state(self, action: Action) -> None:
             updates["conversion_prob"] = s.conversion_prob - 0.10
 
         elif action.action_type == "GIVE_PRICE":
-            # neutral/slight negative if no discount – handled in user sim
             updates["conversion_prob"] = s.conversion_prob + 0.03
 
         elif action.action_type == "ASK_QUESTION":
@@ -447,19 +427,19 @@ def _apply_agent_action_to_state(self, action: Action) -> None:
             updates["satisfaction"] = s.satisfaction + 0.03
 
         elif action.action_type == "ESCALATE":
-            updates["annoyance"] = s.annoyance - 0.10  # relief
+            updates["annoyance"] = s.annoyance - 0.10
             updates["trust"] = s.trust + 0.05
 
         elif action.action_type == "END_CONVERSATION":
             pass  # terminal action; handled in _check_done
 
-        # register agent commitment obligation
         if action.message:
             self._maybe_create_agent_commitment(action)
 
         if updates:
             self._state = s.with_updates(**updates)
 
+            
     def _maybe_create_agent_commitment(self, action: Action) -> None:
         """
         If the agent's message contains a commitment phrase, create an
