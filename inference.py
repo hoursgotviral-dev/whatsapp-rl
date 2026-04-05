@@ -38,10 +38,10 @@ API_KEY      = os.getenv("HF_TOKEN") or os.getenv("API_KEY", "")
 BENCHMARK    = "whatsapp_sales_rl"
 TASKS        = ["task1", "task2", "task3"]
 
-# Agent behaviour knobs
-TEMPERATURE  = 0.3   # lower = more deterministic action selection
+TEMPERATURE  = 0.3
 MAX_TOKENS   = 256
-# An episode is considered a success if the outcome is SALE or ESCALATED
+
+# SALE or ESCALATED are both non-negative terminal outcomes
 SUCCESS_OUTCOMES = {"SALE", "ESCALATED"}
 
 
@@ -81,34 +81,37 @@ def log_end(success: bool, steps: int, rewards: List[float]) -> None:
 # ══════════════════════════════════════════════════════════════════════════════
 
 SYSTEM_PROMPT = textwrap.dedent("""
-You are an expert WhatsApp sales agent. Your goal is to guide the customer
-toward a purchase (SALE outcome) while keeping them happy and satisfied.
+You are a WhatsApp sales agent. Your goal is to raise the customer's conversion
+probability to close a SALE by building trust and satisfaction — NOT by spamming discounts.
 
-At each step you receive the current conversation state and must choose exactly
-one action from the list below. Reply with a valid JSON object and nothing else.
+CRITICAL RULES:
+1. OFFER_DISCOUNT is expensive — use it AT MOST ONCE per episode, only when sentiment > 0.2
+   and the customer has explicitly resisted the price. Keep discount_pct between 5 and 15.
+2. Never repeat the same action twice in a row.
+3. DELAY_RESPONSE is forbidden — never use it.
+4. Build trust first: ASK_QUESTION → PROVIDE_INFO → GIVE_PRICE → small OFFER_DISCOUNT → close.
+5. If sentiment is already positive (> 0.1), skip discounts and use PROVIDE_INFO to reinforce.
+6. If uncertainties include "low_trust", use PROVIDE_INFO or ASK_QUESTION, not discounts.
+7. If uncertainties include "low_patience", wrap up quickly — use GIVE_PRICE or PROVIDE_INFO.
 
-Available actions:
-  ASK_QUESTION      – Ask the customer a qualifying question
-  GIVE_PRICE        – Quote a price for the product
-  OFFER_DISCOUNT    – Offer a discount (requires discount_pct between 1 and 50)
-  PROVIDE_INFO      – Share product information or answer a query
-  ESCALATE          – Escalate to a senior agent or manager
-  DELAY_RESPONSE    – Ask the customer to wait (use sparingly — penalised)
-  END_CONVERSATION  – End the conversation
+Ideal action sequence by stage:
+  GREETING          → ASK_QUESTION
+  DISCOVERY         → ASK_QUESTION once, then PROVIDE_INFO
+  QUALIFICATION     → PROVIDE_INFO or GIVE_PRICE
+  OBJECTION_HANDLING→ PROVIDE_INFO first; OFFER_DISCOUNT (5-10%) only if still resistant
+  NEGOTIATION       → OFFER_DISCOUNT once (10-15% max), then PROVIDE_INFO
+  CLOSING           → PROVIDE_INFO to reinforce decision
+  POST_SALE         → PROVIDE_INFO
 
-Response format (JSON only, no extra text):
+Reply with a valid JSON object and nothing else. No extra text.
   {"action_type": "<ACTION>", "message": "<your message to the customer>"}
 
-For OFFER_DISCOUNT also include:
-  {"action_type": "OFFER_DISCOUNT", "discount_pct": <number>, "message": "<msg>"}
+For OFFER_DISCOUNT:
+  {"action_type": "OFFER_DISCOUNT", "discount_pct": 10, "message": "<msg>"}
 
-Strategy hints:
-  - Start by asking questions to understand the customer's needs.
-  - Build trust before quoting a price.
-  - If the customer is skeptical, provide clear information or a small discount.
-  - Avoid DELAY_RESPONSE — it lowers satisfaction.
-  - Monitor obligation warnings; fulfil them promptly with PROVIDE_INFO.
-  - Aim for CLOSING once sentiment is positive and conversion is high.
+Available actions:
+  ASK_QUESTION, GIVE_PRICE, OFFER_DISCOUNT, PROVIDE_INFO,
+  ESCALATE, DELAY_RESPONSE, END_CONVERSATION
 """).strip()
 
 
@@ -121,22 +124,40 @@ def _build_user_prompt(obs: Observation, step: int) -> str:
         if pending else "  none"
     )
 
+    # Coaching hint driven by live state signals
+    if "low_patience" in obs.uncertainties:
+        hint = "WARNING: Customer patience is low. Wrap up fast — use GIVE_PRICE or PROVIDE_INFO."
+    elif "low_trust" in obs.uncertainties:
+        hint = "WARNING: Trust is low. Do NOT offer discounts. Use PROVIDE_INFO or ASK_QUESTION."
+    elif "high_annoyance" in obs.uncertainties:
+        hint = "WARNING: Customer is annoyed. Be concise — use PROVIDE_INFO, not ASK_QUESTION."
+    elif step <= 2:
+        hint = "Early stage: ask one focused question to understand needs."
+    elif step <= 5:
+        hint = "Mid stage: provide value. Share product info or quote a price."
+    elif obs.sentiment > 0.1:
+        hint = "Sentiment is positive. Reinforce with PROVIDE_INFO and move toward closing."
+    else:
+        hint = "Late stage: offer a small one-time discount (5-10%) to break resistance."
+
     return textwrap.dedent(f"""
-        Step {step} — Current conversation state:
+        Step {step} of episode:
 
-        Stage:          {obs.stage}
-        Intent:         {obs.intent}
-        Sentiment:      {obs.sentiment:+.2f}  (-1 = very negative, +1 = very positive)
-        Uncertainties:  {uncertainties}
-        Step count:     {obs.step_count}
+        Stage:         {obs.stage}
+        Intent:        {obs.intent}
+        Sentiment:     {obs.sentiment:+.2f}   (-1=very negative, +1=very positive)
+        Uncertainties: {uncertainties}
+        Step count:    {obs.step_count}
 
-        Pending obligations (must be fulfilled soon):
+        Coach advice:  {hint}
+
+        Pending obligations (fulfil with PROVIDE_INFO or ASK_QUESTION):
         {obligations_text}
 
         Last 6 conversation lines:
         {history_text}
 
-        Choose the best action. Reply with JSON only.
+        Reply with JSON only. No explanation.
     """).strip()
 
 
@@ -147,7 +168,7 @@ def _build_user_prompt(obs: Observation, step: int) -> str:
 def _call_llm(client: OpenAI, obs: Observation, step: int) -> dict:
     """
     Ask the LLM for an action. Returns a dict with at minimum 'action_type'.
-    Falls back to a safe default on any error.
+    Falls back to an empty dict (triggers heuristic) on any error.
     """
     user_prompt = _build_user_prompt(obs, step)
     try:
@@ -188,39 +209,63 @@ VALID_ACTIONS = {
 
 # Stage-aware fallback policy (used when LLM output is invalid/missing)
 _STAGE_FALLBACK = {
-    "GREETING":          ("ASK_QUESTION",  "How can I help you today?"),
-    "DISCOVERY":         ("ASK_QUESTION",  "Could you tell me more about what you're looking for?"),
-    "QUALIFICATION":     ("PROVIDE_INFO",  "Here's what makes our product a great fit for you."),
-    "OBJECTION_HANDLING":("OFFER_DISCOUNT","10"),
-    "NEGOTIATION":       ("OFFER_DISCOUNT","15"),
-    "CLOSING":           ("PROVIDE_INFO",  "You've made a great choice!"),
-    "POST_SALE":         ("PROVIDE_INFO",  "Thank you for your purchase!"),
-    "ESCALATED":         ("ESCALATE",      "Let me connect you with someone senior."),
-    "ENDED":             ("END_CONVERSATION","Thank you for your time."),
+    "GREETING":           ("ASK_QUESTION",   "How can I help you today?"),
+    "DISCOVERY":          ("ASK_QUESTION",   "Could you tell me more about what you're looking for?"),
+    "QUALIFICATION":      ("PROVIDE_INFO",   "Here's what makes our product a great fit for you."),
+    "OBJECTION_HANDLING": ("PROVIDE_INFO",   "Let me address your concerns directly."),
+    "NEGOTIATION":        ("OFFER_DISCOUNT", "10"),
+    "CLOSING":            ("PROVIDE_INFO",   "You've made a great choice!"),
+    "POST_SALE":          ("PROVIDE_INFO",   "Thank you for your purchase!"),
+    "ESCALATED":          ("ESCALATE",       "Let me connect you with someone senior."),
+    "ENDED":              ("END_CONVERSATION","Thank you for your time."),
 }
+
+# Module-level flag: only one discount per episode
+_discount_used: bool = False
 
 
 def _build_action(llm_output: dict, obs: Observation) -> Action:
     """
     Convert LLM JSON dict → validated Action.
-    Falls back to the stage-aware heuristic on any validation error.
+    Applies safety overrides, then falls back to stage heuristic on error.
     """
+    global _discount_used
+
     action_type = str(llm_output.get("action_type", "")).upper()
     message     = str(llm_output.get("message", ""))
     discount    = llm_output.get("discount_pct")
 
-    # Fulfil pending obligations immediately with PROVIDE_INFO
+    # ── safety overrides ──────────────────────────────────────────────────────
+
+    # Block DELAY_RESPONSE always
+    if action_type == "DELAY_RESPONSE":
+        action_type = "PROVIDE_INFO"
+        message = "Here's some more information that might help you decide."
+
+    # Block repeated discounts — only one per episode
+    if action_type == "OFFER_DISCOUNT" and _discount_used:
+        action_type = "PROVIDE_INFO"
+        message = "Let me share more details about why this is a great choice."
+
+    # Block discounts when trust is low — they don't help and cost a lot
+    if action_type == "OFFER_DISCOUNT" and "low_trust" in obs.uncertainties:
+        action_type = "PROVIDE_INFO"
+        message = "Let me explain exactly what you're getting and why it's worth it."
+
+    # Fulfil pending obligations immediately
     if obs.obligations.has_pending and action_type not in {"PROVIDE_INFO", "ASK_QUESTION", "ESCALATE"}:
         action_type = "PROVIDE_INFO"
-        message     = "Let me follow up on your earlier request."
+        message = "Let me follow up on your earlier request."
 
+    # ── build Action ──────────────────────────────────────────────────────────
     try:
         if action_type not in VALID_ACTIONS:
             raise ValueError(f"Unknown action: {action_type}")
 
         if action_type == "OFFER_DISCOUNT":
             pct = float(discount) if discount is not None else 10.0
-            pct = max(1.0, min(50.0, pct))   # clamp to valid range
+            pct = max(5.0, min(15.0, pct))   # hard cap: 5–15%
+            _discount_used = True
             return Action(action_type="OFFER_DISCOUNT", message=message, discount_pct=pct)
 
         return Action(action_type=action_type, message=message)
@@ -230,12 +275,15 @@ def _build_action(llm_output: dict, obs: Observation) -> Action:
         fallback_type, fallback_msg = _STAGE_FALLBACK.get(
             obs.stage, ("ASK_QUESTION", "How can I help?")
         )
-        if fallback_type == "OFFER_DISCOUNT":
+        if fallback_type == "OFFER_DISCOUNT" and not _discount_used:
+            _discount_used = True
             return Action(
                 action_type="OFFER_DISCOUNT",
                 message="Here's a special discount for you.",
-                discount_pct=float(fallback_msg),
+                discount_pct=10.0,
             )
+        elif fallback_type == "OFFER_DISCOUNT":
+            return Action(action_type="PROVIDE_INFO", message="Let me share more details.")
         return Action(action_type=fallback_type, message=fallback_msg)
 
 
@@ -245,10 +293,13 @@ def _build_action(llm_output: dict, obs: Observation) -> Action:
 
 def run_episode(client: OpenAI, task_id: str) -> None:
     """Run one complete episode for the given task and emit structured logs."""
-    rewards:      List[float] = []
-    steps_taken:  int         = 0
-    success:      bool        = False
-    final_outcome: str        = "IN_PROGRESS"
+    global _discount_used
+    _discount_used = False          # reset per episode
+
+    rewards:       List[float] = []
+    steps_taken:   int         = 0
+    success:       bool        = False
+    final_outcome: str         = "IN_PROGRESS"
 
     log_start(task=task_id, model=MODEL_NAME)
 
@@ -267,10 +318,9 @@ def run_episode(client: OpenAI, task_id: str) -> None:
             try:
                 obs, reward, done, info = env.step(action)
             except Exception as exc:
-                # Log the error and attempt a safe fallback
                 error_str = str(exc).replace("\n", " ")[:120]
                 print(f"[DEBUG] env.step() error: {error_str}", flush=True)
-                # Try a guaranteed-valid fallback action
+                # Guaranteed-safe fallback
                 safe_action = Action(
                     action_type="ASK_QUESTION",
                     message="Could you tell me more?",
@@ -278,7 +328,7 @@ def run_episode(client: OpenAI, task_id: str) -> None:
                 obs, reward, done, info = env.step(safe_action)
 
             rewards.append(reward)
-            steps_taken = step
+            steps_taken   = step
             final_outcome = info.get("outcome", "IN_PROGRESS")
 
             log_step(
@@ -293,7 +343,6 @@ def run_episode(client: OpenAI, task_id: str) -> None:
                 break
 
     except Exception as exc:
-        # Catastrophic failure — still emit [END]
         print(f"[DEBUG] Episode failed: {exc}", flush=True)
         final_outcome = "IN_PROGRESS"
 
@@ -307,7 +356,6 @@ def run_episode(client: OpenAI, task_id: str) -> None:
 
 def main() -> None:
     client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
-
     for task_id in TASKS:
         run_episode(client, task_id)
 
