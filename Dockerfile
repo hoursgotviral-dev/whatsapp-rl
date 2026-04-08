@@ -1,5 +1,4 @@
-FROM python:3.11-slim
-
+FROM python:3.9-slim
 LABEL maintainer="Dev A"
 LABEL description="WhatsApp Sales RL – OpenEnv server"
 LABEL version="1.0.0"
@@ -22,11 +21,17 @@ ENV PYTHONPATH=/app
 
 COPY nginx.conf /etc/nginx/nginx.conf
 
+# Create nginx temp dirs under /tmp so they're writable by any user
+RUN mkdir -p /tmp/nginx_client_temp \
+             /tmp/nginx_proxy_temp \
+             /tmp/nginx_fastcgi_temp \
+             /tmp/nginx_uwsgi_temp \
+             /tmp/nginx_scgi_temp \
+    && chmod +x start.sh
+
 EXPOSE 7860
 
-HEALTHCHECK --interval=30s --timeout=10s --start-period=20s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=10s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:7860/health || exit 1
-
-RUN chmod +x start.sh
 
 CMD ["bash", "start.sh"]

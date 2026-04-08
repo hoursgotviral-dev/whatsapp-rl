@@ -1,18 +1,26 @@
-#!/bin/bash
+fixed start.sh: #!/bin/bash
 set -e
 
-# Start Gradio on internal port 7861 (no code change)
-python app/gradio_demo.py &
+echo "[start.sh] Starting Gradio on port 7861..."
+python ui/gradio_demo.py &
+GRADIO_PID=$!
 
-# Start FastAPI on internal port 8000 (app.py contains the FastAPI app object)
-uvicorn app:app --host 0.0.0.0 --port 8000 &
+echo "[start.sh] Starting FastAPI on port 8000..."
+uvicorn server:app --host 0.0.0.0 --port 8000 &
+UVICORN_PID=$!
 
-# Wait for both to be ready
-sleep 3
+echo "[start.sh] Waiting for services to initialise..."
+sleep 5
 
-# nginx proxies the single exposed port 7860:
-#   /          → Gradio UI
-#   /v1/       → FastAPI
-#   /health    → FastAPI
-#   /docs      → FastAPI
+# Verify both processes are still running
+if ! kill -0 $GRADIO_PID 2>/dev/null; then
+    echo "[start.sh] ERROR: Gradio failed to start"
+    exit 1
+fi
+if ! kill -0 $UVICORN_PID 2>/dev/null; then
+    echo "[start.sh] ERROR: FastAPI failed to start"
+    exit 1
+fi
+
+echo "[start.sh] All services up — starting nginx on port 7860"
 nginx -g "daemon off;"
