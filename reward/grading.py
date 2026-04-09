@@ -20,7 +20,7 @@ class TrajectoryScore:
 
 # Base scores per outcome — drive the grade, not step rewards
 _OUTCOME_BASE: dict = {
-    "SALE":        0.75,
+    "SALE":        0.70,
     "ESCALATED":   0.35,
     "NO_SALE":     0.20,
     "ABANDONED":   0.10,
@@ -46,7 +46,7 @@ def grade_trajectory(
         Final score in [0.0, 1.0].
     """
     if not trajectory:
-        return 0.05
+        return 0.1
 
     # ── 1. Extract terminal info from the last step ───────────────────────────
     _, _, _, last_info = trajectory[-1]
@@ -95,7 +95,7 @@ def grade_trajectory(
 
     # ── 5. Combine and clamp to [0, 1] ────────────────────────────────────────
     raw = base + satisfaction_mod + annoyance_mod + obligation_mod + task_bonus - task_penalty
-    final_score = max(0.05, min(0.95, raw))
+    final_score = max(0.1, min(0.9, raw))
 
     return round(final_score, 4)
 
