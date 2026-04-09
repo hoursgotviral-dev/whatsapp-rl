@@ -5,10 +5,7 @@ Single source of truth for task configurations lives in env/environment.py.
 This module re-exports from there so any code that imports from tasks.configs
 continues to work without modification.
 """
-import sys
-import os
-sys.path.insert(0, os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "env"))
-from environment import TaskConfig, TASK_CONFIGS
+from env.environment import TaskConfig, TASK_CONFIGS
 
 
 def get_task_config(task_id: str) -> TaskConfig:
