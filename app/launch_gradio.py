@@ -1,7 +1,7 @@
 """Launch wrapper for Gradio on hosted environments.
 
 Keeps gradio_demo.py untouched while handling:
-1) localhost accessibility checks on hosted proxies
+1) localhost accessibility checks behind proxy setups
 2) history format compatibility (dict messages -> tuple pairs)
 """
 
@@ -12,6 +12,7 @@ import runpy
 from typing import Any, List
 
 import gradio as gr
+import gradio.networking as gr_networking
 
 try:
     from gradio.components.chatbot import Chatbot as ChatbotComponent
@@ -20,9 +21,21 @@ except Exception:  # pragma: no cover
 
 
 _original_launch = gr.Blocks.launch
+_original_url_ok = gr_networking.url_ok
 _original_postprocess = (
     ChatbotComponent.postprocess if ChatbotComponent is not None else None
 )
+
+
+def _is_hosted_space() -> bool:
+    return bool(os.getenv("SPACE_ID") or os.getenv("HF_SPACE_ID") or os.getenv("SPACE_HOST"))
+
+
+def _patched_url_ok(url: str) -> bool:
+    # In hosted proxy setups, localhost probes can fail even when app is healthy.
+    if _is_hosted_space():
+        return True
+    return _original_url_ok(url)
 
 
 def _messages_to_tuples(history: List[Any]) -> List[List[Any]]:
@@ -64,22 +77,18 @@ def _patched_launch(self, *args, **kwargs):
     try:
         return _original_launch(self, *args, **kwargs)
     except ValueError as exc:
-        message = str(exc)
-        if "localhost is not accessible" not in message:
-            raise
-
-        retry_kwargs = dict(kwargs)
-        retry_kwargs["share"] = True
-        print(
-            "[launch_gradio] Retrying launch with share=True due localhost check.",
-            flush=True,
-        )
-        return _original_launch(self, *args, **retry_kwargs)
+        msg = str(exc).lower()
+        if "localhost" in msg and "accessible" in msg:
+            retry_kwargs = dict(kwargs)
+            retry_kwargs["share"] = True
+            print("[launch_gradio] Retrying with share=True after localhost probe failure.", flush=True)
+            return _original_launch(self, *args, **retry_kwargs)
+        raise
 
 
+gr_networking.url_ok = _patched_url_ok
 if ChatbotComponent is not None and _original_postprocess is not None:
     ChatbotComponent.postprocess = _patched_postprocess
-
 gr.Blocks.launch = _patched_launch
 
 runpy.run_path(
