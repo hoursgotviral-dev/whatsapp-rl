@@ -1,4 +1,4 @@
-FROM python:3.9-slim
+FROM python:3.11-slim
 LABEL maintainer="Dev A"
 LABEL description="WhatsApp Sales RL – OpenEnv server"
 LABEL version="1.0.0"
@@ -27,6 +27,7 @@ RUN mkdir -p /tmp/nginx_client_temp \
              /tmp/nginx_fastcgi_temp \
              /tmp/nginx_uwsgi_temp \
              /tmp/nginx_scgi_temp \
+    && sed -i 's/\r$//' start.sh \
     && chmod +x start.sh
 
 EXPOSE 7860

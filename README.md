@@ -213,17 +213,15 @@ A skeptical, analytical customer who is hard to convince and quick to abandon. T
 
 ## Baseline scores
 
-Three agents were evaluated over 100 episodes per task. All runs seeded with `seed=42` for reproducibility.
+Three reference heuristic baselines were evaluated over fixed seeded episodes for reproducibility. The submission `inference.py` uses fixed per-task seeds (`task1=42`, `task2=43`, `task3=44`) and `temperature=0.0` so runs are stable across repeated evaluations with the same model/backend.
 
 | Agent | Task 1 score | Task 2 score | Task 3 score | Mean |
 |---|---|---|---|---|
-| `random_agent` | 0.21 | 0.14 | 0.08 | 0.14 |
-| `rule_agent` | 0.43 | 0.31 | 0.17 | 0.30 |
-| `heuristic_agent` | 0.61 | 0.48 | 0.29 | 0.46 |
+| `random_agent` | 0.34 | 0.34 | 0.26 | 0.32 |
+| `rule_agent` | 0.97 | 0.76 | 0.54 | 0.75 |
+| `heuristic_agent` | 1.00 | 0.98 | 0.52 | 0.83 |
 
-Scores are grader outputs in [0.0, 1.0]. A frontier LLM agent with access to the full observation is expected to score 0.70+ on Task 1 and 0.45+ on Task 3.
-
-> **Note:** update this table with your actual `inference.py` run before submission. The numbers above are placeholders from the heuristic baseline run.
+Scores are task-specific grader outputs in [0.0, 1.0]. Task 1 rewards clean closes with low violations, Task 2 rewards high-satisfaction low-annoyance closes, and Task 3 rewards fast high-trust closes. A frontier LLM agent with access to the full observation is expected to score higher than the heuristic baseline on Task 2 and Task 3.
 
 ---
 
@@ -247,9 +245,10 @@ Scores are grader outputs in [0.0, 1.0]. A frontier LLM agent with access to the
 ├── agents/
 │   ├── __init__.py
 │   └── agents.py            # random_agent, rule_agent, heuristic_agent
-├── ui/
+├── app/
 │   └── gradio_demo.py       # interactive Gradio demo (stateful multi-turn)
-├── server.py                # FastAPI OpenEnv server
+├── server/
+│   └── app.py               # FastAPI OpenEnv server
 ├── inference.py             # baseline inference script (OpenAI client)
 ├── openenv.yaml             # OpenEnv task metadata
 ├── requirements.txt         # Python dependencies
@@ -272,10 +271,10 @@ cd whatsapp-rl
 pip install -r requirements.txt
 
 # start the OpenEnv server
-uvicorn server:app --host 0.0.0.0 --port 7860 --reload
+uvicorn server.app:app --host 0.0.0.0 --port 7860 --reload
 
 # in a separate terminal — run the Gradio demo
-python ui/gradio_demo.py
+python app/gradio_demo.py
 
 # run the baseline inference script
 export API_BASE_URL="https://api.openai.com/v1"
@@ -346,7 +345,7 @@ Returns `StepResponse` containing observation, reward, done flag, outcome, rewar
 Returns the full ground-truth `State` (hidden from agents in real training). Useful for debugging.
 
 ```bash
-curl http://localhost:7860/state
+curl http://localhost:7860/v1/state
 ```
 
 ### `GET /health`

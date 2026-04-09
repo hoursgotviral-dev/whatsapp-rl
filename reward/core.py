@@ -114,5 +114,13 @@ def compute_step_reward(
             components["terminal"] = 0.0              # neutral — escalation not failure
         # IN_PROGRESS: no terminal bonus
 
-    total_reward = sum(components.values())
-    return float(total_reward), components
+    weighted_components = {
+        name: value * weights.get(name, 1.0)
+        for name, value in components.items()
+    }
+
+    if done and state_after.get("outcome", "IN_PROGRESS") == "ESCALATED":
+        weighted_components["terminal"] = weighted_components.get("terminal", 0.0) - 0.25
+
+    total_reward = sum(weighted_components.values())
+    return float(total_reward), weighted_components

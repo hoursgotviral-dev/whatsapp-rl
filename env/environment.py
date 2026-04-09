@@ -514,7 +514,8 @@ class WhatsAppEnv:
         }.get(event, {})
 
         if deltas:
-            self._state = s.with_updates(**deltas)
+            updates = {field: getattr(s, field) + delta for field, delta in deltas.items()}
+            self._state = s.with_updates(**updates)
 
         # detect follow-up promises in user message
         self._maybe_create_follow_up_obligation(msg)
@@ -756,6 +757,10 @@ class WhatsAppEnv:
             self._state = s.with_updates(outcome="ESCALATED", episode_done=True)
             return True
 
+        if s.stage == "POST_SALE":
+            self._state = s.with_updates(outcome="SALE", episode_done=True)
+            return True
+
         if s.conversion_prob >= C.CONVERSION_THRESHOLD:
             self._state = s.with_updates(outcome="SALE", episode_done=True)
             return True
@@ -780,7 +785,11 @@ class WhatsAppEnv:
         s = self._state
 
         # noisy sentiment: true sentiment = (satisfaction - 0.5) * 2
-        true_sentiment = (s.satisfaction - 0.5) * 2.0
+        true_sentiment = (
+            (s.satisfaction - 0.5) * 1.4
+            - s.annoyance * 0.9
+            + (s.trust - 0.5) * 0.3
+        )
         noise = self._rng.gauss(0.0, C.OBSERVATION_NOISE_STD)
         noisy_sentiment = max(-1.0, min(1.0, true_sentiment + noise))
 

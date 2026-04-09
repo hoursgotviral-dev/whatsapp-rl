@@ -4,19 +4,20 @@ version = "1.0.0"
 description = "WhatsApp Sales RL Environment"
 requires-python = ">=3.11"
 dependencies = [
-    "pydantic>=2.5.0",
-    "fastapi>=0.100.0",
-    "uvicorn[standard]>=0.25.0",
-    "numpy>=1.24.0",
-    "requests>=2.31.0",
-    "openai>=1.0.0",
-    "gradio>=4.0.0",
-    "python-multipart",
+    "pydantic>=2.5.0,<3",
+    "fastapi>=0.100.0,<1",
+    "uvicorn[standard]>=0.25.0,<1",
+    "numpy>=1.24.0,<3",
+    "requests>=2.31.0,<3",
+    "openai>=1.0.0,<2",
+    "gradio==4.44.1",
+    "huggingface_hub==0.25.2",
+    "python-multipart>=0.0.9",
     "openenv-core>=0.2.0",
 ]
 
 [project.scripts]
-server = "server:main"
+server = "server.app:main"
 
 [project.urls]
 Homepage = "https://huggingface.co/spaces/SIKRUTI/whatsapp-rl"
