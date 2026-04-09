@@ -38,39 +38,70 @@ def _patched_url_ok(url: str) -> bool:
     return _original_url_ok(url)
 
 
-def _messages_to_tuples(history: List[Any]) -> List[List[Any]]:
-    """Convert OpenAI-style message dict history to tuple chatbot history."""
-    tuples: List[List[Any]] = []
+def _append_pair(pairs: List[List[Any]], pending_user: Any, assistant: Any) -> Any:
+    if pending_user is None:
+        pairs.append([None, assistant])
+        return None
+    pairs.append([pending_user, assistant])
+    return None
+
+
+def _normalize_history_to_tuples(history: List[Any]) -> List[List[Any]]:
+    """
+    Convert mixed chatbot history shapes to Gradio tuple format:
+    [[user_msg, assistant_msg], ...]
+    """
+    pairs: List[List[Any]] = []
     pending_user: Any = None
 
     for item in history:
-        if not isinstance(item, dict):
-            continue
-        role = item.get("role")
-        content = item.get("content")
+        role = None
+        content = None
+
+        if isinstance(item, dict):
+            role = item.get("role")
+            content = item.get("content")
+        elif hasattr(item, "role") and hasattr(item, "content"):
+            role = getattr(item, "role")
+            content = getattr(item, "content")
+        elif isinstance(item, (list, tuple)):
+            if len(item) == 2:
+                if pending_user is not None:
+                    pairs.append([pending_user, None])
+                    pending_user = None
+                pairs.append([item[0], item[1]])
+                continue
+            if len(item) == 1:
+                role = "assistant"
+                content = item[0]
+        else:
+            role = "assistant"
+            content = item
 
         if role == "user":
             if pending_user is not None:
-                tuples.append([pending_user, None])
+                pairs.append([pending_user, None])
             pending_user = content
         else:
-            if pending_user is None:
-                tuples.append([None, content])
-            else:
-                tuples.append([pending_user, content])
-                pending_user = None
+            pending_user = _append_pair(pairs, pending_user, content)
 
     if pending_user is not None:
-        tuples.append([pending_user, None])
+        pairs.append([pending_user, None])
 
-    return tuples
+    return pairs
 
 
 def _patched_postprocess(self, value, *args, **kwargs):
-    # Keep original UI mode; only adapt data format when callbacks emit dict messages.
-    if isinstance(value, list) and value and all(isinstance(v, dict) for v in value):
-        value = _messages_to_tuples(value)
-    return _original_postprocess(self, value, *args, **kwargs)
+    # Keep original UI mode; adapt payload only when needed for tuple format.
+    try:
+        if isinstance(value, list) and value and all(isinstance(v, dict) for v in value):
+            value = _normalize_history_to_tuples(value)
+        return _original_postprocess(self, value, *args, **kwargs)
+    except Exception as exc:
+        if "tuples format" in str(exc).lower() and isinstance(value, list):
+            normalized = _normalize_history_to_tuples(value)
+            return _original_postprocess(self, normalized, *args, **kwargs)
+        raise
 
 
 def _patched_launch(self, *args, **kwargs):
