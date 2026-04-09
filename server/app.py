@@ -46,6 +46,11 @@ class ActionRequest(BaseModel):
     discount_pct: Optional[float] = Field(default=None, ge=0.0, le=100.0)
 
 
+class ResetRequest(BaseModel):
+    """Optional body accepted by POST /reset and POST /v1/reset."""
+    task_id: Optional[str] = None
+
+
 class RewardComponents(BaseModel):
     satisfaction_gain:  float = 0.0
     annoyance_penalty:  float = 0.0
@@ -180,9 +185,12 @@ def health():
     )
 
 
-@app.post("/v1/reset", tags=["Environment"])
-def reset(task_id: str = Query(default="task1",
-                               description="One of: task1, task2, task3")):
+def _resolve_task_id(task_id: Optional[str], body: Optional[ResetRequest]) -> str:
+    resolved = task_id or (body.task_id if body else None) or "task1"
+    return resolved
+
+
+def _reset_impl(task_id: str):
     """
     Start a new episode.
 
@@ -208,8 +216,23 @@ def reset(task_id: str = Query(default="task1",
         raise HTTPException(status_code=500, detail=f"Reset failed: {e}")
 
 
-@app.post("/v1/step", response_model=StepResponse, tags=["Environment"])
-def step(body: ActionRequest):
+@app.post("/v1/reset", tags=["Environment"])
+def reset_v1(
+    task_id: Optional[str] = Query(default=None, description="One of: task1, task2, task3"),
+    body: Optional[ResetRequest] = None,
+):
+    return _reset_impl(_resolve_task_id(task_id, body))
+
+
+@app.post("/reset", tags=["Environment"])
+def reset_root(
+    task_id: Optional[str] = Query(default=None, description="One of: task1, task2, task3"),
+    body: Optional[ResetRequest] = None,
+):
+    return _reset_impl(_resolve_task_id(task_id, body))
+
+
+def _step_impl(body: ActionRequest):
     """
     Advance the environment by one step.
 
@@ -260,8 +283,18 @@ def step(body: ActionRequest):
     )
 
 
+@app.post("/v1/step", response_model=StepResponse, tags=["Environment"])
+def step_v1(body: ActionRequest):
+    return _step_impl(body)
+
+
+@app.post("/step", response_model=StepResponse, tags=["Environment"])
+def step_root(body: ActionRequest):
+    return _step_impl(body)
+
+
 @app.get("/v1/state", tags=["Environment"])
-def get_state():
+def get_state_v1():
     """
     Return the full ground-truth State (hidden from agents in real training).
     Useful for debugging and monitoring.
@@ -271,6 +304,11 @@ def get_state():
         return _state_to_dict(env.state())
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"State fetch failed: {e}")
+
+
+@app.get("/state", tags=["Environment"])
+def get_state_root():
+    return get_state_v1()
 
 
 # ══════════════════════════════════════════════════════════════════════════════
