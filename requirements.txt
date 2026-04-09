@@ -7,4 +7,3 @@ openai>=2.7.2,<3
 gradio==4.44.1
 huggingface_hub==0.25.2
 python-multipart>=0.0.9
-openenv-core>=0.2.0
