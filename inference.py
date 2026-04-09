@@ -44,6 +44,7 @@ TASK_SEEDS = {"task1": 42, "task2": 43, "task3": 44}
 
 TEMPERATURE = 0.0
 MAX_TOKENS = 256
+REQUEST_TIMEOUT_S = 30
 
 # Treat escalation as a fallback, not a successful sales outcome.
 SUCCESS_OUTCOMES = {"SALE"}
@@ -202,6 +203,7 @@ def _call_llm(client: Optional[OpenAI], obs: Observation, step: int) -> Dict[str
             ],
             temperature=TEMPERATURE,
             max_tokens=MAX_TOKENS,
+            timeout=REQUEST_TIMEOUT_S,
         )
         raw = (completion.choices[0].message.content or "").strip()
         return _extract_json_object(raw)
@@ -234,7 +236,6 @@ _STAGE_FALLBACK = {
 
 _NO_REPEAT = {
     "ASK_QUESTION": "PROVIDE_INFO",
-    "PROVIDE_INFO": "GIVE_PRICE",
     "GIVE_PRICE": "PROVIDE_INFO",
     "OFFER_DISCOUNT": "PROVIDE_INFO",
     "ESCALATE": "PROVIDE_INFO",
@@ -263,44 +264,38 @@ def _fallback_action_by_state(obs: Observation, last_action_type: str = "") -> A
             action_type = "PROVIDE_INFO"
             message = "Thanks, based on that I can suggest the best option."
     elif obs.stage == "QUALIFICATION":
-        if "low_trust" in obs.uncertainties:
-            action_type = "PROVIDE_INFO"
-            message = "Let me explain exactly what is included and how support works."
-        else:
-            action_type = "GIVE_PRICE"
-            message = "Here is a clear quote based on your needs."
+        action_type = "PROVIDE_INFO"
+        message = "Let me explain exactly what is included and how support works."
     elif obs.stage == "OBJECTION_HANDLING":
         if (
             not _discount_used
-            and obs.sentiment > -0.25
+            and obs.sentiment > 0.25
             and "low_trust" not in obs.uncertainties
+            and obs.step_count >= 4
         ):
             _discount_used = True
             return Action(
                 action_type="OFFER_DISCOUNT",
                 message="I can offer a small limited discount to help you decide.",
-                discount_pct=7.0,
+                discount_pct=5.0,
             )
         action_type = "PROVIDE_INFO"
         message = "Totally fair concern. Let me address it directly."
     elif obs.stage == "NEGOTIATION":
         if (
             not _discount_used
-            and obs.sentiment > -0.10
+            and obs.sentiment > 0.20
             and "low_trust" not in obs.uncertainties
+            and obs.step_count >= 4
         ):
             _discount_used = True
             return Action(
                 action_type="OFFER_DISCOUNT",
-                message="I can do a small one-time 7% discount today.",
-                discount_pct=7.0,
+                message="I can do a small one-time 5% discount today.",
+                discount_pct=5.0,
             )
-        if obs.sentiment >= 0:
-            action_type = "GIVE_PRICE"
-            message = "This is the best final quote I can offer."
-        else:
-            action_type = "PROVIDE_INFO"
-            message = "Let me share one more detail that reduces your risk."
+        action_type = "PROVIDE_INFO"
+        message = "Let me share one more detail that reduces your risk."
     elif obs.stage in {"CLOSING", "POST_SALE"}:
         action_type = "PROVIDE_INFO"
         message = "Excellent choice. I can help you complete this quickly."
@@ -343,6 +338,10 @@ def _build_action(llm_output: Dict[str, Any], obs: Observation, last_action_type
     if action_type == "OFFER_DISCOUNT" and "low_trust" in obs.uncertainties:
         action_type = "PROVIDE_INFO"
         message = "Let me explain exactly what you're getting and why it's worth it."
+
+    if action_type == "GIVE_PRICE" and obs.stage in {"GREETING", "DISCOVERY", "OBJECTION_HANDLING"}:
+        action_type = "PROVIDE_INFO"
+        message = "Let me first explain value and fit for your needs."
 
     if obs.obligations.has_pending and action_type not in {"PROVIDE_INFO", "ASK_QUESTION", "ESCALATE"}:
         action_type = "PROVIDE_INFO"
