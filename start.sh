@@ -1,6 +1,17 @@
 #!/bin/bash
 set -euo pipefail
 
+# Normalize API key env vars so gradio demo can use hosted secrets
+if [ -z "${HF_TOKEN:-}" ] && [ -n "${HUGGINGFACEHUB_API_TOKEN:-}" ]; then
+    export HF_TOKEN="${HUGGINGFACEHUB_API_TOKEN}"
+fi
+if [ -z "${HF_TOKEN:-}" ] && [ -n "${HUGGING_FACE_HUB_TOKEN:-}" ]; then
+    export HF_TOKEN="${HUGGING_FACE_HUB_TOKEN}"
+fi
+if [ -z "${API_KEY:-}" ] && [ -n "${OPENAI_API_KEY:-}" ]; then
+    export API_KEY="${OPENAI_API_KEY}"
+fi
+
 echo "[start.sh] Starting FastAPI on port 8000..."
 uvicorn server.app:app --host 0.0.0.0 --port 8000 &
 UVICORN_PID=$!
