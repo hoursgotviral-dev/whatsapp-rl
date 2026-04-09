@@ -12,6 +12,12 @@ WORKDIR /app
 
 COPY requirements.txt .
 RUN pip install --default-timeout=1000 --no-cache-dir -r requirements.txt
+# Install OpenEnv CLI in an isolated venv to avoid dependency conflicts
+# with Gradio runtime dependencies (notably websockets constraints).
+RUN python -m venv /opt/openenv-venv \
+    && /opt/openenv-venv/bin/pip install --no-cache-dir --upgrade pip \
+    && /opt/openenv-venv/bin/pip install --no-cache-dir openenv-core==0.2.3 \
+    && ln -sf /opt/openenv-venv/bin/openenv /usr/local/bin/openenv
 
 COPY . .
 
