@@ -33,4 +33,13 @@ if ! kill -0 "${GRADIO_PID}" 2>/dev/null; then
 fi
 
 echo "[start.sh] Starting nginx on port 7860..."
-nginx -g "daemon off;"
+nginx -g "daemon off;" &
+NGINX_PID=$!
+
+# Keep container healthy: if any child process dies, stop the rest and exit.
+wait -n -p EXITED_PID "${UVICORN_PID}" "${GRADIO_PID}" "${NGINX_PID}" || true
+echo "[start.sh] Process ${EXITED_PID} exited. Shutting down remaining services..."
+
+kill "${UVICORN_PID}" "${GRADIO_PID}" "${NGINX_PID}" 2>/dev/null || true
+wait "${UVICORN_PID}" "${GRADIO_PID}" "${NGINX_PID}" 2>/dev/null || true
+exit 1

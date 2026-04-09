@@ -17,6 +17,7 @@ STDOUT FORMAT (one [START], N [STEP]s, one [END] per episode):
 from __future__ import annotations
 
 import json
+import math
 import os
 import sys
 import textwrap
@@ -47,6 +48,24 @@ TEMPERATURE = 0.0
 MAX_TOKENS  = 256
 
 SUCCESS_OUTCOMES = {"SALE"}
+SCORE_EPSILON = 1e-3
+
+
+def _strict_open_unit_interval(value: Any, default: float = 0.5) -> float:
+    """Return a finite float guaranteed to be strictly between 0 and 1."""
+    try:
+        x = float(value)
+    except (TypeError, ValueError):
+        x = default
+
+    if not math.isfinite(x):
+        x = default
+
+    if x <= 0.0:
+        return SCORE_EPSILON
+    if x >= 1.0:
+        return 1.0 - SCORE_EPSILON
+    return x
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -70,7 +89,7 @@ def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> No
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
     print(
         f"[END] success={str(success).lower()} steps={steps} "
-        f"score={score:.2f} rewards={rewards_str}",
+        f"score={score:.4f} rewards={rewards_str}",
         flush=True,
     )
 
@@ -299,9 +318,9 @@ def run_episode(client: Optional[OpenAI], task_id: str) -> None:
         print(f"Episode failed: {exc}", file=sys.stderr, flush=True)
         final_outcome = "IN_PROGRESS"
 
-    # Compute score strictly within (0.1, 0.9)
+    # Compute score strictly within (0, 1) for Phase 2 validation.
     raw_score = grade_trajectory(trajectory, task_id=task_id)
-    score     = round(min(max(float(raw_score), 0.1), 0.9), 2)
+    score     = round(_strict_open_unit_interval(raw_score), 4)
 
     success = final_outcome in SUCCESS_OUTCOMES
     log_end(success=success, steps=steps_taken, score=score, rewards=rewards)

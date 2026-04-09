@@ -30,8 +30,11 @@ class InferenceChecklistTests(unittest.TestCase):
     def test_log_end_matches_required_format(self):
         buf = io.StringIO()
         with redirect_stdout(buf):
-            inference.log_end(success=True, steps=3, rewards=[0.1, -0.2, 1.25])
-        self.assertEqual(buf.getvalue().strip(), "[END] success=true steps=3 rewards=0.10,-0.20,1.25")
+            inference.log_end(success=True, steps=3, score=0.4567, rewards=[0.1, -0.2, 1.25])
+        self.assertEqual(
+            buf.getvalue().strip(),
+            "[END] success=true steps=3 score=0.4567 rewards=0.10,-0.20,1.25",
+        )
 
     def test_llm_api_key_falls_back_to_either_supported_env_var(self):
         self.assertEqual(inference.LLM_API_KEY, inference.HF_TOKEN or inference.OPENAI_API_KEY)

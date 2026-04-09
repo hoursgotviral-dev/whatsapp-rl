@@ -4,6 +4,7 @@ Input: list of (obs, action, reward, info) tuples
 Output: single float score in [0, 1]
 """
 
+import math
 from typing import List, Tuple, Any, Optional
 from dataclasses import dataclass
 
@@ -26,6 +27,25 @@ _OUTCOME_BASE: dict = {
     "ABANDONED":   0.10,
     "IN_PROGRESS": 0.15,   # episode cut off without terminal signal
 }
+
+_SCORE_EPSILON = 1e-3
+
+
+def _strict_open_unit_interval(value: float, default: float = 0.5) -> float:
+    """Clamp score to a finite value strictly inside (0, 1)."""
+    try:
+        x = float(value)
+    except (TypeError, ValueError):
+        x = default
+
+    if not math.isfinite(x):
+        x = default
+
+    if x <= 0.0:
+        return _SCORE_EPSILON
+    if x >= 1.0:
+        return 1.0 - _SCORE_EPSILON
+    return x
 
 
 def grade_trajectory(
@@ -95,7 +115,7 @@ def grade_trajectory(
 
     # ── 5. Combine and clamp to [0, 1] ────────────────────────────────────────
     raw = base + satisfaction_mod + annoyance_mod + obligation_mod + task_bonus - task_penalty
-    final_score = max(0.1, min(0.9, raw))
+    final_score = _strict_open_unit_interval(max(0.1, min(0.9, raw)))
 
     return round(final_score, 4)
 
