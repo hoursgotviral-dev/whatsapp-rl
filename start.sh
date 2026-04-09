@@ -6,7 +6,7 @@ uvicorn server.app:app --host 0.0.0.0 --port 8000 &
 UVICORN_PID=$!
 
 echo "[start.sh] Starting Gradio on port 7861..."
-python app/gradio_demo.py &
+python app/launch_gradio.py &
 GRADIO_PID=$!
 
 echo "[start.sh] Waiting for services to initialise..."
