@@ -114,9 +114,9 @@ TASK_CONFIGS: Dict[str, TaskConfig] = {
     "hard": TaskConfig(
         task_id="hard",
         max_steps=25,
-        trust_range=(0.2, 0.45),
-        patience_range=(0.4, 0.65),
-        conversion_prob_range=(0.15, 0.35),
+        trust_range=(0.25, 0.50),
+        patience_range=(0.45, 0.70),
+        conversion_prob_range=(0.20, 0.38),
         user_type_weights={
             "IMPULSIVE": 0.10,
             "ANALYTICAL": 0.30,
@@ -316,7 +316,11 @@ class WhatsAppEnv:
 
         self._state = State(
             user_type=user_type,
-            true_intent="PURCHASE",
+            true_intent=self._rng.choices(
+                ["PURCHASE", "INQUIRY"],
+                weights=[0.80, 0.20],
+                k=1
+            )[0],
             trust=uniform(*cfg.trust_range),
             patience=uniform(*cfg.patience_range),
             satisfaction=uniform(*cfg.satisfaction_range),

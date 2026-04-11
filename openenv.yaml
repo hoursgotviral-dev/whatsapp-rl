@@ -57,10 +57,10 @@ tasks:
     difficulty: hard
     max_steps: 25
     initial_state:
-      trust_range: [0.2, 0.45]
-      patience_range: [0.4, 0.65]
+      trust_range: [0.25, 0.50]
+      patience_range: [0.45, 0.70]
       satisfaction_range: [0.4, 0.6]
-      conversion_prob_range: [0.15, 0.35]
+      conversion_prob_range: [0.20, 0.38]
     user_type_weights:
       IMPULSIVE: 0.10
       ANALYTICAL: 0.30

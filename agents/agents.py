@@ -103,7 +103,7 @@ def heuristic_agent(obs: Observation) -> Action:
         return _make_action("OFFER_DISCOUNT", discount_pct=10.0)
 
     if stage == "NEGOTIATION":
-        return _make_action("OFFER_DISCOUNT", discount_pct=20.0)
+        return _make_action("OFFER_DISCOUNT", discount_pct=15.0)
 
     if stage in ("CLOSING", "POST_SALE"):
         return _make_action("PROVIDE_INFO", message="You've made a great choice. Here's what comes next.")

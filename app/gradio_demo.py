@@ -204,7 +204,7 @@ def run_step(task_id, history, env_state, client_state):
         if client is None:
             client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
 
-        obs = env._build_observation()
+        obs = env.reset() if env.state().time_step == 0 else env._build_observation()
 
         # figure out last action type from chat history
         last_action_type = ""

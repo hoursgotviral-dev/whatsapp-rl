@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import List, Literal, Optional
+from typing import Dict, List, Literal, Optional
 from pydantic import BaseModel, Field, model_validator
 
 
@@ -184,6 +184,11 @@ class Observation(BaseModel):
     uncertainties: List[str] = Field(default_factory=list)
     obligations: ObligationSummary = Field(default_factory=ObligationSummary)
     step_count: int = Field(default=0, ge=0)
+
+
+class Reward(BaseModel):
+    value: float
+    components: Dict[str, float] = Field(default_factory=dict)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

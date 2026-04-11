@@ -11,7 +11,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 COPY requirements.txt .
-RUN pip install --default-timeout=1000 --no-cache-dir -r requirements.txt
+RUN pip install --default-timeout=1000 --no-cache-dir --prefer-binary -r requirements.txt
 # Install OpenEnv CLI in an isolated venv to avoid dependency conflicts
 # with Gradio runtime dependencies (notably websockets constraints).
 RUN python -m venv /opt/openenv-venv \
